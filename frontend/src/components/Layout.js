@@ -9,6 +9,7 @@ import {
   Receipt,
   LogOut,
   Store,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -19,6 +20,7 @@ const navItems = [
   { to: "/categories", label: "Kategori", icon: Tags, admin: true },
   { to: "/history", label: "Riwayat", icon: Receipt, admin: false },
   { to: "/users", label: "Pengguna", icon: UsersIcon, admin: true },
+  { to: "/settings", label: "Pengaturan", icon: SettingsIcon, admin: true },
 ];
 
 export default function Layout() {

@@ -7,11 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Receipt as ReceiptIcon, Loader2, Search, Printer, Banknote, CreditCard, QrCode } from "lucide-react";
 import Receipt from "@/components/Receipt";
+import { useSettings } from "@/lib/useSettings";
 
 const methodIcon = { cash: Banknote, card: CreditCard, qris: QrCode };
 const methodLabel = { cash: "Tunai", card: "Kartu", qris: "QRIS" };
 
 export default function History() {
+  const store = useSettings();
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -79,7 +81,7 @@ export default function History() {
       <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
         <DialogContent className="sm:max-w-sm" data-testid="history-receipt-dialog">
           <DialogHeader><DialogTitle className="font-display">Detail Transaksi</DialogTitle></DialogHeader>
-          {selected && <Receipt sale={selected} />}
+          {selected && <Receipt sale={selected} store={store} />}
           <DialogFooter>
             <Button variant="outline" className="w-full" onClick={() => window.print()} data-testid="history-print-button">
               <Printer className="mr-2 h-4 w-4" /> Cetak Struk

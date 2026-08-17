@@ -7,7 +7,7 @@ import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
   BarChart, Bar, PieChart, Pie, Cell, Legend,
 } from "recharts";
-import { TrendingUp, Wallet, Receipt, Package, Loader2, AlertTriangle } from "lucide-react";
+import { TrendingUp, Wallet, Receipt, Package, Loader2, AlertTriangle, Download, FileText } from "lucide-react";
 
 const CHART_COLORS = ["#4338CA", "#10B981", "#F59E0B", "#0EA5E9", "#EC4899", "#8B5CF6", "#EF4444", "#14B8A6"];
 
@@ -61,6 +61,80 @@ export default function Reports() {
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
 
+  const exportCSV = () => {
+    const rows = [];
+    rows.push(["Laporan Penjualan", `${start} s/d ${end}`]);
+    rows.push([]);
+    rows.push(["Ringkasan"]);
+    rows.push(["Total Penjualan", summary?.total_sales || 0]);
+    rows.push(["Total Profit", summary?.total_profit || 0]);
+    rows.push(["Jumlah Transaksi", summary?.transactions || 0]);
+    rows.push(["Item Terjual", summary?.items_sold || 0]);
+    rows.push([]);
+    rows.push(["Penjualan Harian", "Tanggal", "Total", "Profit", "Transaksi"]);
+    overTime.forEach((d) => rows.push(["", d.date, d.total, d.profit, d.count]));
+    rows.push([]);
+    rows.push(["Produk Terlaris", "Nama", "Qty", "Pendapatan"]);
+    topProducts.forEach((p) => rows.push(["", p.name, p.qty, p.revenue]));
+    rows.push([]);
+    rows.push(["Per Kategori", "Kategori", "Total"]);
+    byCategory.forEach((c) => rows.push(["", c.name, c.value]));
+    rows.push([]);
+    rows.push(["Metode Pembayaran", "Metode", "Transaksi", "Total"]);
+    payMethods.forEach((m) => rows.push(["", m.method, m.count, m.total]));
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `laporan-${start}-${end}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportPDF = () => {
+    const fmt = (n) => "Rp " + Math.round(n || 0).toLocaleString("id-ID");
+    const w = window.open("", "_blank");
+    if (!w) return;
+    const rowsOver = overTime.map((d) => `<tr><td>${d.date}</td><td style="text-align:right">${fmt(d.total)}</td><td style="text-align:right">${fmt(d.profit)}</td><td style="text-align:right">${d.count}</td></tr>`).join("");
+    const rowsTop = topProducts.map((p) => `<tr><td>${p.name}</td><td style="text-align:right">${p.qty}</td><td style="text-align:right">${fmt(p.revenue)}</td></tr>`).join("");
+    const rowsCat = byCategory.map((c) => `<tr><td>${c.name}</td><td style="text-align:right">${fmt(c.value)}</td></tr>`).join("");
+    const rowsPay = payMethods.map((m) => `<tr><td>${m.method}</td><td style="text-align:right">${m.count}</td><td style="text-align:right">${fmt(m.total)}</td></tr>`).join("");
+    w.document.write(`<html><head><title>Laporan Penjualan</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:32px;color:#0F172A}
+        h1{font-size:22px;margin:0 0 4px} h2{font-size:15px;margin:24px 0 8px}
+        .sub{color:#64748B;font-size:13px;margin-bottom:16px}
+        .cards{display:flex;gap:12px;margin:16px 0}
+        .card{border:1px solid #E2E8F0;border-radius:8px;padding:12px 16px;flex:1}
+        .card .l{font-size:11px;color:#64748B;text-transform:uppercase}
+        .card .v{font-size:18px;font-weight:700;margin-top:4px}
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        th,td{border-bottom:1px solid #E2E8F0;padding:8px;text-align:left}
+        th{background:#F1F5F9}
+      </style></head><body>
+      <h1>Laporan Penjualan</h1>
+      <div class="sub">Periode ${start} s/d ${end}</div>
+      <div class="cards">
+        <div class="card"><div class="l">Total Penjualan</div><div class="v">${fmt(summary?.total_sales)}</div></div>
+        <div class="card"><div class="l">Total Profit</div><div class="v">${fmt(summary?.total_profit)}</div></div>
+        <div class="card"><div class="l">Transaksi</div><div class="v">${summary?.transactions || 0}</div></div>
+        <div class="card"><div class="l">Item Terjual</div><div class="v">${summary?.items_sold || 0}</div></div>
+      </div>
+      <h2>Penjualan Harian</h2>
+      <table><thead><tr><th>Tanggal</th><th style="text-align:right">Total</th><th style="text-align:right">Profit</th><th style="text-align:right">Transaksi</th></tr></thead><tbody>${rowsOver || '<tr><td colspan="4">Tidak ada data</td></tr>'}</tbody></table>
+      <h2>Produk Terlaris</h2>
+      <table><thead><tr><th>Nama</th><th style="text-align:right">Qty</th><th style="text-align:right">Pendapatan</th></tr></thead><tbody>${rowsTop || '<tr><td colspan="3">Tidak ada data</td></tr>'}</tbody></table>
+      <h2>Penjualan per Kategori</h2>
+      <table><thead><tr><th>Kategori</th><th style="text-align:right">Total</th></tr></thead><tbody>${rowsCat || '<tr><td colspan="2">Tidak ada data</td></tr>'}</tbody></table>
+      <h2>Metode Pembayaran</h2>
+      <table><thead><tr><th>Metode</th><th style="text-align:right">Transaksi</th><th style="text-align:right">Total</th></tr></thead><tbody>${rowsPay || '<tr><td colspan="3">Tidak ada data</td></tr>'}</tbody></table>
+      </body></html>`);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 400);
+  };
+
   return (
     <div className="h-screen overflow-y-auto p-8">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -78,6 +152,8 @@ export default function Reports() {
             <Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className="w-40" data-testid="report-end-date" />
           </div>
           <Button onClick={load} data-testid="apply-filter-button">Terapkan</Button>
+          <Button variant="outline" onClick={exportCSV} data-testid="export-csv-button"><Download className="mr-2 h-4 w-4" /> CSV</Button>
+          <Button variant="outline" onClick={exportPDF} data-testid="export-pdf-button"><FileText className="mr-2 h-4 w-4" /> PDF</Button>
         </div>
       </div>
 

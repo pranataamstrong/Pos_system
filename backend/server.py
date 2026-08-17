@@ -70,7 +70,15 @@ class ProductInput(BaseModel):
     cost: float = 0.0
     stock: int = 0
     sku: Optional[str] = None
+    barcode: Optional[str] = None
     image: Optional[str] = None
+
+class SettingsInput(BaseModel):
+    store_name: str = "Mandiri POS"
+    address: str = ""
+    phone: str = ""
+    logo: Optional[str] = None
+    footer: str = "Terima kasih atas kunjungan Anda"
 
 class CartItem(BaseModel):
     product_id: str
@@ -224,6 +232,17 @@ async def delete_product(prod_id: str, admin: dict = Depends(require_admin)):
 async def checkout(data: CheckoutInput, user: dict = Depends(get_current_user)):
     if not data.items:
         raise HTTPException(status_code=400, detail="Keranjang kosong")
+    # validate stock availability (aggregate qty per product)
+    qty_by_product = defaultdict(int)
+    for i in data.items:
+        qty_by_product[i.product_id] += i.qty
+    for pid, qty in qty_by_product.items():
+        try:
+            prod = await db.products.find_one({"_id": ObjectId(pid)})
+        except Exception:
+            prod = None
+        if prod is not None and qty > prod.get("stock", 0):
+            raise HTTPException(status_code=400, detail=f"Stok '{prod.get('name', '')}' tidak mencukupi (sisa {prod.get('stock', 0)})")
     subtotal = sum(i.price * i.qty for i in data.items)
     total_cost = sum(i.cost * i.qty for i in data.items)
     total = subtotal - data.discount
@@ -253,6 +272,22 @@ async def checkout(data: CheckoutInput, user: dict = Depends(get_current_user)):
 async def list_sales(user: dict = Depends(get_current_user), limit: int = 200):
     sales = await db.sales.find().sort("created_at", -1).to_list(limit)
     return [serialize(s) for s in sales]
+
+# ------ Settings ------
+@api_router.get("/settings")
+async def get_settings(user: dict = Depends(get_current_user)):
+    doc = await db.settings.find_one({"key": "store"})
+    if not doc:
+        defaults = SettingsInput().model_dump()
+        return defaults
+    doc.pop("_id", None)
+    doc.pop("key", None)
+    return doc
+
+@api_router.put("/settings")
+async def update_settings(data: SettingsInput, admin: dict = Depends(require_admin)):
+    await db.settings.update_one({"key": "store"}, {"$set": {**data.model_dump(), "key": "store"}}, upsert=True)
+    return data.model_dump()
 
 @api_router.get("/sales/{sale_id}")
 async def get_sale(sale_id: str, user: dict = Depends(get_current_user)):

@@ -23,16 +23,20 @@ import {
   QrCode,
   Printer,
   CheckCircle2,
+  ScanLine,
 } from "lucide-react";
 import { toast } from "sonner";
 import Receipt from "@/components/Receipt";
+import { useSettings } from "@/lib/useSettings";
 
 export default function POS() {
   const { user } = useAuth();
+  const store = useSettings();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [activeCat, setActiveCat] = useState("all");
   const [search, setSearch] = useState("");
+  const [barcode, setBarcode] = useState("");
   const [cart, setCart] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -68,19 +72,53 @@ export default function POS() {
   }, [products, activeCat, search]);
 
   const addToCart = (p) => {
+    if (p.stock <= 0) {
+      toast.error(`Stok "${p.name}" habis`);
+      return;
+    }
     setCart((prev) => {
       const ex = prev.find((i) => i.product_id === p.id);
-      if (ex) return prev.map((i) => (i.product_id === p.id ? { ...i, qty: i.qty + 1 } : i));
+      if (ex) {
+        if (ex.qty >= p.stock) {
+          toast.error(`Stok "${p.name}" hanya ${p.stock}`);
+          return prev;
+        }
+        return prev.map((i) => (i.product_id === p.id ? { ...i, qty: i.qty + 1 } : i));
+      }
       return [...prev, { product_id: p.id, name: p.name, price: p.price, cost: p.cost || 0, qty: 1 }];
     });
   };
   const changeQty = (id, delta) =>
     setCart((prev) =>
       prev
-        .map((i) => (i.product_id === id ? { ...i, qty: i.qty + delta } : i))
+        .map((i) => {
+          if (i.product_id !== id) return i;
+          const prod = products.find((p) => p.id === id);
+          if (delta > 0 && prod && i.qty >= prod.stock) {
+            toast.error(`Stok "${i.name}" hanya ${prod.stock}`);
+            return i;
+          }
+          return { ...i, qty: i.qty + delta };
+        })
         .filter((i) => i.qty > 0)
     );
   const removeItem = (id) => setCart((prev) => prev.filter((i) => i.product_id !== id));
+
+  const handleBarcode = (e) => {
+    e.preventDefault();
+    const code = barcode.trim();
+    if (!code) return;
+    const p = products.find(
+      (x) => (x.barcode && x.barcode === code) || (x.sku && x.sku === code)
+    );
+    if (p) {
+      addToCart(p);
+      toast.success(`${p.name} ditambahkan`);
+    } else {
+      toast.error("Produk tidak ditemukan");
+    }
+    setBarcode("");
+  };
 
   const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
   const disc = Number(discount) || 0;
@@ -126,15 +164,27 @@ export default function POS() {
       {/* Product area */}
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="border-b border-border bg-card px-6 py-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Cari produk..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-              data-testid="product-search-input"
-            />
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Cari produk..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+                data-testid="product-search-input"
+              />
+            </div>
+            <form onSubmit={handleBarcode} className="relative sm:w-72">
+              <ScanLine className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Scan / ketik barcode lalu Enter"
+                value={barcode}
+                onChange={(e) => setBarcode(e.target.value)}
+                className="pl-9"
+                data-testid="barcode-input"
+              />
+            </form>
           </div>
           <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
             <button
@@ -179,8 +229,11 @@ export default function POS() {
                   onClick={() => addToCart(p)}
                   data-testid={`product-card-${p.id}`}
                   style={{ animationDelay: `${idx * 30}ms` }}
-                  className="group animate-fade-up overflow-hidden rounded-lg border border-border bg-card text-left transition-transform duration-200 hover:-translate-y-1"
+                  className={`group relative animate-fade-up overflow-hidden rounded-lg border border-border bg-card text-left transition-transform duration-200 hover:-translate-y-1 ${p.stock <= 0 ? "opacity-60" : ""}`}
                 >
+                  {p.stock <= 0 && (
+                    <span className="absolute right-2 top-2 z-10 rounded-full bg-destructive px-2 py-0.5 text-xs font-medium text-destructive-foreground">Habis</span>
+                  )}
                   <div className="aspect-square w-full overflow-hidden bg-secondary">
                     {p.image ? (
                       <img src={p.image} alt={p.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
@@ -344,7 +397,7 @@ export default function POS() {
               <CheckCircle2 className="h-5 w-5 text-emerald-500" /> Transaksi Berhasil
             </DialogTitle>
           </DialogHeader>
-          {lastSale && <Receipt sale={lastSale} cashier={user?.name} />}
+          {lastSale && <Receipt sale={lastSale} cashier={user?.name} store={store} />}
           <DialogFooter className="flex-row gap-2">
             <Button variant="outline" className="flex-1" onClick={() => window.print()} data-testid="print-receipt-button">
               <Printer className="mr-2 h-4 w-4" /> Cetak

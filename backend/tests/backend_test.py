@@ -222,3 +222,80 @@ class TestUsers:
         r = requests.get(f"{API}/users", headers=admin_headers)
         assert r.status_code == 200
         assert any(u["email"] == ADMIN_EMAIL for u in r.json())
+
+
+# ---------------- Settings (new) ----------------
+class TestSettings:
+    def test_get_settings_default_or_saved(self, admin_headers):
+        r = requests.get(f"{API}/settings", headers=admin_headers)
+        assert r.status_code == 200
+        d = r.json()
+        for k in ("store_name", "address", "phone", "footer"):
+            assert k in d
+
+    def test_put_settings_admin_and_persisted(self, admin_headers):
+        payload = {
+            "store_name": "TEST Toko Kopi",
+            "address": "Jl. Testing No. 1",
+            "phone": "0812-3456",
+            "logo": "https://example.com/logo.png",
+            "footer": "TEST footer",
+        }
+        r = requests.put(f"{API}/settings", headers=admin_headers, json=payload)
+        assert r.status_code == 200
+        # verify persisted
+        r2 = requests.get(f"{API}/settings", headers=admin_headers)
+        d = r2.json()
+        assert d["store_name"] == payload["store_name"]
+        assert d["address"] == payload["address"]
+        assert d["footer"] == payload["footer"]
+
+    def test_put_settings_forbidden_for_cashier(self, admin_headers):
+        email = f"test_settings_cashier_{int(time.time())}@example.com"
+        r = requests.post(f"{API}/auth/register", headers=admin_headers,
+                          json={"email": email, "password": "pass1234", "name": "SC", "role": "cashier"})
+        uid = r.json()["id"]
+        tok = requests.post(f"{API}/auth/login", json={"email": email, "password": "pass1234"}).json()["token"]
+        ch = {"Authorization": f"Bearer {tok}"}
+        r = requests.put(f"{API}/settings", headers=ch, json={"store_name": "hack"})
+        assert r.status_code == 403
+        # cashier can GET
+        r = requests.get(f"{API}/settings", headers=ch)
+        assert r.status_code == 200
+        requests.delete(f"{API}/users/{uid}", headers=admin_headers)
+
+
+# ---------------- Stock guard (new) ----------------
+class TestStockGuard:
+    def test_oversell_returns_400(self, admin_headers):
+        # create product with stock=2
+        r = requests.post(f"{API}/products", headers=admin_headers,
+                          json={"name": "TEST_StockGuard", "price": 1000, "cost": 500, "stock": 2})
+        assert r.status_code == 200
+        p = r.json()
+        payload = {
+            "items": [{"product_id": p["id"], "name": p["name"], "price": p["price"], "cost": p["cost"], "qty": 5}],
+            "payment_method": "cash",
+            "amount_paid": 5000,
+        }
+        r = requests.post(f"{API}/sales", headers=admin_headers, json=payload)
+        assert r.status_code == 400
+        detail = r.json().get("detail", "")
+        assert "tidak mencukupi" in detail.lower() or "stok" in detail.lower()
+        # verify stock NOT decremented
+        prods = requests.get(f"{API}/products", headers=admin_headers).json()
+        cur = next(x for x in prods if x["id"] == p["id"])
+        assert cur["stock"] == 2
+        requests.delete(f"{API}/products/{p['id']}", headers=admin_headers)
+
+    def test_product_with_barcode_persisted(self, admin_headers):
+        r = requests.post(f"{API}/products", headers=admin_headers,
+                          json={"name": "TEST_Barcode", "price": 1000, "stock": 5, "barcode": "TESTBC123"})
+        assert r.status_code == 200
+        pid = r.json()["id"]
+        assert r.json().get("barcode") == "TESTBC123"
+        # verify in list
+        prods = requests.get(f"{API}/products", headers=admin_headers).json()
+        p = next(x for x in prods if x["id"] == pid)
+        assert p.get("barcode") == "TESTBC123"
+        requests.delete(f"{API}/products/{pid}", headers=admin_headers)

@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Plus, Pencil, Trash2, Package, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-const empty = { name: "", category_id: "none", price: "", cost: "", stock: "", sku: "", image: "" };
+const empty = { name: "", category_id: "none", price: "", cost: "", stock: "", sku: "", barcode: "", image: "" };
 
 export default function Products() {
   const [products, setProducts] = useState([]);
@@ -37,7 +37,7 @@ export default function Products() {
   const openNew = () => { setEditing(null); setForm(empty); setOpen(true); };
   const openEdit = (p) => {
     setEditing(p);
-    setForm({ ...p, category_id: p.category_id || "none", price: p.price, cost: p.cost || "", stock: p.stock, sku: p.sku || "", image: p.image || "" });
+    setForm({ ...p, category_id: p.category_id || "none", price: p.price, cost: p.cost || "", stock: p.stock, sku: p.sku || "", barcode: p.barcode || "", image: p.image || "" });
     setOpen(true);
   };
 
@@ -50,6 +50,7 @@ export default function Products() {
       cost: Number(form.cost) || 0,
       stock: Number(form.stock) || 0,
       sku: form.sku || null,
+      barcode: form.barcode || null,
       image: form.image || null,
     };
     try {
@@ -157,6 +158,10 @@ export default function Products() {
                 <Label>SKU (opsional)</Label>
                 <Input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Barcode (opsional)</Label>
+              <Input value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} placeholder="Kode barcode untuk scan" data-testid="product-barcode-input" />
             </div>
             <div className="space-y-2">
               <Label>URL Gambar (opsional)</Label>

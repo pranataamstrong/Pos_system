@@ -2,13 +2,19 @@ import { rupiah } from "@/lib/api";
 
 const methodLabel = { cash: "Tunai", card: "Kartu", qris: "QRIS" };
 
-export default function Receipt({ sale, cashier }) {
+export default function Receipt({ sale, cashier, store }) {
   const date = new Date(sale.created_at);
+  const name = store?.store_name || "Mandiri POS";
+  const footer = store?.footer || "Terima kasih atas kunjungan Anda";
   return (
     <div className="receipt-print rounded-lg border border-border bg-white p-4 text-sm text-slate-800" data-testid="receipt-content">
       <div className="text-center">
-        <p className="font-display text-lg font-semibold">Mandiri POS</p>
-        <p className="text-xs text-slate-500">Terima kasih atas kunjungan Anda</p>
+        {store?.logo ? (
+          <img src={store.logo} alt={name} className="mx-auto mb-1 h-12 w-12 rounded object-cover" />
+        ) : null}
+        <p className="font-display text-lg font-semibold">{name}</p>
+        {store?.address ? <p className="text-xs text-slate-500">{store.address}</p> : null}
+        {store?.phone ? <p className="text-xs text-slate-500">{store.phone}</p> : null}
       </div>
       <div className="my-3 border-t border-dashed border-slate-300" />
       <div className="flex justify-between text-xs text-slate-500">
@@ -56,7 +62,7 @@ export default function Receipt({ sale, cashier }) {
         )}
       </div>
       <div className="my-3 border-t border-dashed border-slate-300" />
-      <p className="text-center text-xs text-slate-400">Struk ini adalah bukti pembayaran yang sah</p>
+      <p className="text-center text-xs text-slate-400">{footer}</p>
     </div>
   );
 }
