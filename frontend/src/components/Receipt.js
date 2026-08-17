@@ -47,6 +47,12 @@ export default function Receipt({ sale, cashier, store }) {
             <span>- {rupiah(sale.discount)}</span>
           </div>
         )}
+        {sale.redeem_value > 0 && (
+          <div className="flex justify-between text-slate-500">
+            <span>Tukar Poin ({sale.points_redeemed})</span>
+            <span>- {rupiah(sale.redeem_value)}</span>
+          </div>
+        )}
         <div className="flex justify-between font-semibold text-base pt-1">
           <span>Total</span>
           <span>{rupiah(sale.total)}</span>

@@ -28,6 +28,7 @@ import {
   CheckCircle2,
   ScanLine,
   UserRound,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import Receipt from "@/components/Receipt";
@@ -50,7 +51,9 @@ export default function POS() {
   const [discount, setDiscount] = useState("");
   const [discountType, setDiscountType] = useState("amount");
   const [customers, setCustomers] = useState([]);
-  const [customerId, setCustomerId] = useState("none");
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [pointsRedeem, setPointsRedeem] = useState("");
   const [processing, setProcessing] = useState(false);
   const [lastSale, setLastSale] = useState(null);
 
@@ -131,8 +134,20 @@ export default function POS() {
   const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
   const discInput = Number(discount) || 0;
   const disc = discountType === "percent" ? Math.round((subtotal * discInput) / 100) : discInput;
-  const total = Math.max(0, subtotal - disc);
+  const pointValue = store?.point_value || 100;
+  const maxRedeemablePoints = selectedCustomer
+    ? Math.min(selectedCustomer.points || 0, Math.floor(Math.max(0, subtotal - disc) / pointValue))
+    : 0;
+  const redeemPts = Math.max(0, Math.min(Number(pointsRedeem) || 0, maxRedeemablePoints));
+  const redeemValue = redeemPts * pointValue;
+  const total = Math.max(0, subtotal - disc - redeemValue);
   const change = method === "cash" ? Math.max(0, (Number(amountPaid) || 0) - total) : 0;
+  const memberMatches = customers
+    .filter((c) => {
+      const q = customerQuery.toLowerCase();
+      return c.name.toLowerCase().includes(q) || (c.phone || "").includes(customerQuery);
+    })
+    .slice(0, 6);
 
   const openPay = () => {
     if (cart.length === 0) return toast.error("Keranjang masih kosong");
@@ -151,7 +166,8 @@ export default function POS() {
         discount: disc,
         discount_type: discountType,
         discount_value: discInput,
-        customer_id: customerId === "none" ? null : customerId,
+        customer_id: selectedCustomer?.id || null,
+        points_redeemed: redeemPts,
         payment_method: method,
         amount_paid: method === "cash" ? Number(amountPaid) || total : total,
       });
@@ -159,7 +175,9 @@ export default function POS() {
       setCart([]);
       setDiscount("");
       setDiscountType("amount");
-      setCustomerId("none");
+      setSelectedCustomer(null);
+      setCustomerQuery("");
+      setPointsRedeem("");
       setPayOpen(false);
       toast.success("Pembayaran berhasil!");
       load();
@@ -346,19 +364,47 @@ export default function POS() {
             </div>
 
             <div className="space-y-2">
-              <Label>Pelanggan (opsional)</Label>
-              <Select value={customerId} onValueChange={setCustomerId}>
-                <SelectTrigger data-testid="customer-select">
-                  <SelectValue placeholder="Tanpa pelanggan" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Tanpa Pelanggan</SelectItem>
-                  {customers.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name} · {c.points || 0} poin</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Member / Pelanggan (opsional)</Label>
+              {selectedCustomer ? (
+                <div className="flex items-center justify-between rounded-lg border border-primary/40 bg-accent px-3 py-2" data-testid="selected-customer">
+                  <div>
+                    <p className="text-sm font-medium">{selectedCustomer.name}</p>
+                    <p className="text-xs text-muted-foreground">{selectedCustomer.phone || "-"} · {selectedCustomer.points || 0} poin</p>
+                  </div>
+                  <button onClick={() => { setSelectedCustomer(null); setPointsRedeem(""); }} className="text-muted-foreground hover:text-destructive transition-colors" data-testid="clear-customer">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <UserRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input placeholder="Cari via nomor HP / nama..." value={customerQuery} onChange={(e) => setCustomerQuery(e.target.value)} className="pl-9" data-testid="member-search-input" />
+                  {customerQuery && (
+                    <div className="absolute z-20 mt-1 max-h-44 w-full overflow-y-auto rounded-lg border border-border bg-popover shadow-md" data-testid="member-results">
+                      {memberMatches.length === 0 ? (
+                        <p className="px-3 py-2 text-sm text-muted-foreground">Tidak ada pelanggan</p>
+                      ) : memberMatches.map((c) => (
+                        <button key={c.id} onClick={() => { setSelectedCustomer(c); setCustomerQuery(""); }} data-testid={`member-option-${c.id}`} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent transition-colors">
+                          <span>{c.name}</span>
+                          <span className="text-xs text-muted-foreground">{c.phone || "-"} · {c.points || 0} poin</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+
+            {selectedCustomer && (selectedCustomer.points || 0) > 0 && (
+              <div className="space-y-2">
+                <Label>Tukar Poin (1 poin = {rupiah(pointValue)})</Label>
+                <div className="flex gap-2">
+                  <Input type="number" min="0" max={maxRedeemablePoints} placeholder="0" value={pointsRedeem} onChange={(e) => setPointsRedeem(e.target.value)} className="flex-1" data-testid="points-redeem-input" />
+                  <Button type="button" variant="outline" onClick={() => setPointsRedeem(String(maxRedeemablePoints))} data-testid="redeem-max-button">Maks {maxRedeemablePoints}</Button>
+                </div>
+                {redeemValue > 0 && <p className="text-xs text-emerald-600" data-testid="redeem-value">Potongan poin: {rupiah(redeemValue)} ({redeemPts} poin)</p>}
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>Diskon</Label>

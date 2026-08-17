@@ -80,6 +80,8 @@ class SettingsInput(BaseModel):
     logo: Optional[str] = None
     footer: str = "Terima kasih atas kunjungan Anda"
     low_stock_threshold: int = 10
+    point_value: float = 100
+    enable_shift_print: bool = True
 
 class CartItem(BaseModel):
     product_id: str
@@ -96,6 +98,7 @@ class CheckoutInput(BaseModel):
     payment_method: str  # cash | card | qris
     amount_paid: float = 0.0
     customer_id: Optional[str] = None
+    points_redeemed: int = 0
     note: Optional[str] = None
 
 class CustomerInput(BaseModel):
@@ -261,30 +264,38 @@ async def checkout(data: CheckoutInput, user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=400, detail=f"Stok '{prod.get('name', '')}' tidak mencukupi (sisa {prod.get('stock', 0)})")
     subtotal = sum(i.price * i.qty for i in data.items)
     total_cost = sum(i.cost * i.qty for i in data.items)
-    total = max(0.0, subtotal - data.discount)
+    # loyalty: resolve customer, validate & compute redemption
+    settings = await db.settings.find_one({"key": "store"})
+    point_value = settings.get("point_value", 100) if settings else 100
+    cust = None
+    if data.customer_id:
+        try:
+            cust = await db.customers.find_one({"_id": ObjectId(data.customer_id)})
+        except Exception:
+            cust = None
+    points_redeemed = max(0, int(data.points_redeemed or 0))
+    if points_redeemed > 0:
+        if not cust:
+            raise HTTPException(status_code=400, detail="Pilih pelanggan dulu untuk tukar poin")
+        if points_redeemed > cust.get("points", 0):
+            raise HTTPException(status_code=400, detail=f"Poin tidak mencukupi (tersedia {cust.get('points', 0)})")
+    redeem_value = points_redeemed * point_value
+    total = max(0.0, subtotal - data.discount - redeem_value)
     profit = total - total_cost
     change = max(0.0, data.amount_paid - total) if data.payment_method == "cash" else 0.0
     receipt_no = "INV-" + datetime.now(timezone.utc).strftime("%Y%m%d") + "-" + uuid.uuid4().hex[:6].upper()
     # active shift for this cashier
     shift = await db.shifts.find_one({"cashier_id": user["id"], "status": "open"})
     shift_id = str(shift["_id"]) if shift else None
-    # loyalty points + customer info
-    customer_name = None
-    points_earned = 0
-    if data.customer_id:
-        try:
-            cust = await db.customers.find_one({"_id": ObjectId(data.customer_id)})
-        except Exception:
-            cust = None
-        if cust:
-            customer_name = cust.get("name")
-            points_earned = int(total // 1000)
+    customer_name = cust.get("name") if cust else None
+    points_earned = int(total // 1000) if cust else 0
     doc = {
         "receipt_no": receipt_no,
         "cashier_id": user["id"], "cashier_name": user.get("name", ""),
         "items": [i.model_dump() for i in data.items],
         "subtotal": subtotal, "discount": data.discount,
         "discount_type": data.discount_type, "discount_value": data.discount_value,
+        "points_redeemed": points_redeemed, "redeem_value": redeem_value,
         "total": total, "total_cost": total_cost, "profit": profit,
         "payment_method": data.payment_method, "amount_paid": data.amount_paid,
         "change": change, "note": data.note,
@@ -301,11 +312,12 @@ async def checkout(data: CheckoutInput, user: dict = Depends(get_current_user)):
             await db.products.update_one({"_id": ObjectId(i.product_id)}, {"$inc": {"stock": -i.qty}})
         except Exception:
             pass
-    # award loyalty points
-    if data.customer_id and points_earned >= 0:
+    # update loyalty points (earn - redeem) and spend
+    if cust:
+        net_points = points_earned - points_redeemed
         try:
             await db.customers.update_one({"_id": ObjectId(data.customer_id)},
-                                          {"$inc": {"points": points_earned, "total_spent": total}})
+                                          {"$inc": {"points": net_points, "total_spent": total}})
         except Exception:
             pass
     return serialize(doc)
@@ -318,13 +330,13 @@ async def list_sales(user: dict = Depends(get_current_user), limit: int = 200):
 # ------ Settings ------
 @api_router.get("/settings")
 async def get_settings(user: dict = Depends(get_current_user)):
+    defaults = SettingsInput().model_dump()
     doc = await db.settings.find_one({"key": "store"})
     if not doc:
-        defaults = SettingsInput().model_dump()
         return defaults
     doc.pop("_id", None)
     doc.pop("key", None)
-    return doc
+    return {**defaults, **doc}
 
 @api_router.put("/settings")
 async def update_settings(data: SettingsInput, admin: dict = Depends(require_admin)):

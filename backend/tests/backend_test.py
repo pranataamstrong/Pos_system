@@ -468,3 +468,124 @@ class TestShifts:
         # cleanup
         requests.delete(f"{API}/products/{p['id']}", headers=admin_headers)
         requests.delete(f"{API}/users/{uid}", headers=admin_headers)
+
+
+
+# ---------------- Iteration 4: Settings (point_value & enable_shift_print) ----------------
+class TestSettingsV4:
+    def test_defaults_include_point_value_and_shift_print(self, admin_headers):
+        r = requests.get(f"{API}/settings", headers=admin_headers)
+        assert r.status_code == 200
+        d = r.json()
+        assert "point_value" in d
+        assert "enable_shift_print" in d
+        # point_value default = 100 unless previously overwritten; must be a positive number
+        assert isinstance(d["point_value"], (int, float))
+        assert d["point_value"] > 0
+        assert isinstance(d["enable_shift_print"], bool)
+
+    def test_put_and_persist_new_fields(self, admin_headers):
+        # baseline: get current settings so we don't clobber
+        cur = requests.get(f"{API}/settings", headers=admin_headers).json()
+        payload = dict(cur)
+        payload["point_value"] = 200
+        payload["enable_shift_print"] = False
+        r = requests.put(f"{API}/settings", headers=admin_headers, json=payload)
+        assert r.status_code == 200
+        d = requests.get(f"{API}/settings", headers=admin_headers).json()
+        assert d["point_value"] == 200
+        assert d["enable_shift_print"] is False
+        # restore defaults
+        payload["point_value"] = 100
+        payload["enable_shift_print"] = True
+        requests.put(f"{API}/settings", headers=admin_headers, json=payload)
+
+
+# ---------------- Iteration 4: Tukar Poin (redeem points) ----------------
+class TestRedeemPoints:
+    def _ensure_point_value(self, admin_headers, value=100):
+        cur = requests.get(f"{API}/settings", headers=admin_headers).json()
+        if cur.get("point_value") != value:
+            cur["point_value"] = value
+            requests.put(f"{API}/settings", headers=admin_headers, json=cur)
+
+    def test_redeem_reduces_total_and_updates_net_points(self, admin_headers):
+        self._ensure_point_value(admin_headers, 100)
+        # Product Rp25.000
+        p = requests.post(f"{API}/products", headers=admin_headers,
+                          json={"name": "TEST_RedeemProd", "price": 25000, "cost": 10000, "stock": 20}).json()
+        # Customer
+        cust = requests.post(f"{API}/customers", headers=admin_headers,
+                             json={"name": "TEST_Redeemer", "phone": ""}).json()
+        cid = cust["id"]
+        # First sale: earn 25 points on Rp25.000
+        pay1 = {
+            "items": [{"product_id": p["id"], "name": p["name"], "price": 25000, "cost": 10000, "qty": 1}],
+            "payment_method": "cash", "amount_paid": 25000, "customer_id": cid,
+        }
+        s1 = requests.post(f"{API}/sales", headers=admin_headers, json=pay1)
+        assert s1.status_code == 200, s1.text
+        assert s1.json()["points_earned"] == 25
+        # verify customer now has 25 points
+        c1 = next(c for c in requests.get(f"{API}/customers", headers=admin_headers).json() if c["id"] == cid)
+        assert c1["points"] == 25
+
+        # Second sale: redeem 10 points -> Rp1.000 off
+        pay2 = {
+            "items": [{"product_id": p["id"], "name": p["name"], "price": 25000, "cost": 10000, "qty": 1}],
+            "payment_method": "cash", "amount_paid": 24000, "customer_id": cid,
+            "points_redeemed": 10,
+        }
+        s2 = requests.post(f"{API}/sales", headers=admin_headers, json=pay2)
+        assert s2.status_code == 200, s2.text
+        sale2 = s2.json()
+        assert sale2["subtotal"] == 25000
+        assert sale2["redeem_value"] == 1000
+        assert sale2["points_redeemed"] == 10
+        assert sale2["total"] == 24000
+        # points_earned computed on final total after redemption: floor(24000/1000)=24
+        assert sale2["points_earned"] == 24
+        # final points = 25 - 10 + 24 = 39
+        c2 = next(c for c in requests.get(f"{API}/customers", headers=admin_headers).json() if c["id"] == cid)
+        assert c2["points"] == 39
+
+        # cleanup
+        requests.delete(f"{API}/customers/{cid}", headers=admin_headers)
+        requests.delete(f"{API}/products/{p['id']}", headers=admin_headers)
+
+    def test_over_redeem_returns_400(self, admin_headers):
+        self._ensure_point_value(admin_headers, 100)
+        p = requests.post(f"{API}/products", headers=admin_headers,
+                          json={"name": "TEST_OverRedeemProd", "price": 5000, "cost": 2000, "stock": 5}).json()
+        cust = requests.post(f"{API}/customers", headers=admin_headers,
+                             json={"name": "TEST_LowPoints", "phone": ""}).json()
+        cid = cust["id"]
+        # customer starts with 0 points; try to redeem 5
+        pay = {
+            "items": [{"product_id": p["id"], "name": p["name"], "price": 5000, "cost": 2000, "qty": 1}],
+            "payment_method": "cash", "amount_paid": 5000, "customer_id": cid,
+            "points_redeemed": 5,
+        }
+        r = requests.post(f"{API}/sales", headers=admin_headers, json=pay)
+        assert r.status_code == 400
+        # cleanup
+        requests.delete(f"{API}/customers/{cid}", headers=admin_headers)
+        requests.delete(f"{API}/products/{p['id']}", headers=admin_headers)
+
+    def test_redeem_requires_customer_or_ignored(self, admin_headers):
+        # if no customer_id but points_redeemed>0 the backend should reject (400) OR silently ignore.
+        self._ensure_point_value(admin_headers, 100)
+        p = requests.post(f"{API}/products", headers=admin_headers,
+                          json={"name": "TEST_NoCustRedeem", "price": 3000, "cost": 1000, "stock": 5}).json()
+        pay = {
+            "items": [{"product_id": p["id"], "name": p["name"], "price": 3000, "cost": 1000, "qty": 1}],
+            "payment_method": "cash", "amount_paid": 3000,
+            "points_redeemed": 5,
+        }
+        r = requests.post(f"{API}/sales", headers=admin_headers, json=pay)
+        # Acceptable behaviors: 400 (rejects) OR 200 with redeem_value=0 (ignored)
+        if r.status_code == 200:
+            assert r.json().get("redeem_value", 0) == 0
+        else:
+            assert r.status_code == 400
+        requests.delete(f"{API}/products/{p['id']}", headers=admin_headers)

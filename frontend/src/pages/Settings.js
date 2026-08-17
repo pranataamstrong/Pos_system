@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Store, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import Receipt from "@/components/Receipt";
@@ -84,6 +85,18 @@ export default function Settings() {
             <Label>Batas Stok Menipis</Label>
             <Input type="number" min="0" value={form.low_stock_threshold ?? 10} onChange={(e) => setForm({ ...form, low_stock_threshold: Number(e.target.value) })} data-testid="settings-threshold-input" />
             <p className="text-xs text-muted-foreground">Produk dengan stok ≤ nilai ini akan muncul di notifikasi.</p>
+          </div>
+          <div className="space-y-2">
+            <Label>Nilai 1 Poin (Rp)</Label>
+            <Input type="number" min="0" value={form.point_value ?? 100} onChange={(e) => setForm({ ...form, point_value: Number(e.target.value) })} data-testid="settings-point-value-input" />
+            <p className="text-xs text-muted-foreground">Nilai potongan per poin saat pelanggan menukar poin.</p>
+          </div>
+          <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">Cetak Laporan Shift</p>
+              <p className="text-xs text-muted-foreground">Tampilkan tombol & cetak otomatis saat tutup shift.</p>
+            </div>
+            <Switch checked={form.enable_shift_print ?? true} onCheckedChange={(v) => setForm({ ...form, enable_shift_print: v })} data-testid="settings-shift-print-switch" />
           </div>
           <Button onClick={save} disabled={saving} data-testid="save-settings-button">
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Simpan

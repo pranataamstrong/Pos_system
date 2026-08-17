@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 4 tested the 3 new features (Kartu Member quick search, Tukar Poin redemption, Cetak Laporan Shift toggle) plus regression. Backend: 35/35 pytest tests pass (added TestSettingsV4 and TestRedeemPoints: default point_value & enable_shift_print fields present; PUT persists them; redeem 10 pts on Rp25k reduces total by Rp1.000 -> total 24000, points_earned=24 on final total, net customer points = 25-10+24 = 39; over-redeem returns 400; redeem without customer either 400 or redeem_value=0). Frontend (Playwright, admin login): POS payment dialog - member-search-input filters live; typing '08123' shows one member-option; clicking selects a selected-customer chip 'Andi Wijaya 08123456789 · 30 poin'; clear-customer removes chip. With customer having 30 points: points-redeem-input & 'Maks 30' button visible; clicking Maks fills 30 and shows redeem-value 'Potongan poin: Rp 3.000 (30 poin)'; total updated from Rp5.000 to Rp2.000. Settings: settings-point-value-input value=100, settings-shift-print-switch checked by default and persists after PUT/GET. Shift page: with switch ON print-shift-<id> buttons render (1 present); toggling switch OFF and saving hides all print buttons; toggling back ON restores them. No frontend console errors during flows.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/sales points_redeemed without customer_id", "issue": "Server accepts request (200) and silently drops redemption when no customer_id is supplied; consider explicit 400 for clarity."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Optional) Return 400 from POST /api/sales when points_redeemed>0 but customer_id is missing.",
+    "(Carry-over) Prior a11y warnings (DialogDescription) still present; not blocking."
+  ],
+  "critical_code_review_comments": [
+    "server.py checkout(): points_redeemed validated against customer.points and redeem_value=points_redeemed*point_value; total = max(0, subtotal - discount - redeem_value); net customer points update = earned - redeemed. Correct per spec.",
+    "server.py GET /api/settings merges defaults so old docs without point_value/enable_shift_print return sane values.",
+    "POS.js: maxRedeemablePoints correctly capped by customer.points AND by subtotal-discount/point_value so total never goes negative.",
+    "Shift.js: print button gated by store.enable_shift_print correctly; also auto window.print on close when enabled.",
+    "Receipt.js: adds 'Tukar Poin (N)' line item and shows earned points; points earned on final total after redemption -- matches backend."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "success_rate": {"backend": "100% (35/35)", "frontend": "100% of tested flows"},
+  "test_credentials": "Admin: pranataamstrong@gmail.com / admin123",
+  "seed_data_creation": "Customer 'Andi Wijaya' phone 08123456789 exists with ~30 points (previously seeded + one extra Air Mineral sale during test). Two extra Rp5.000 sales attributed to Andi were created by the flow. Toggled shift-print OFF then back to ON at end. point_value restored to 100.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "backend_test.py now has 35 tests (TestSettingsV4 + TestRedeemPoints added). Andi Wijaya customer (phone 08123456789) is available in DB with points>0 for member-search / redeem UI screenshots. Store enable_shift_print=ON, point_value=100.",
+  "rca of the issue": "N/A - no blocking issues."
+}

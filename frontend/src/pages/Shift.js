@@ -8,11 +8,13 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Wallet, Loader2, LockOpen, Lock, ArrowDownRight, ArrowUpRight } from "lucide-react";
+import { Wallet, Loader2, LockOpen, Lock, ArrowDownRight, ArrowUpRight, Printer } from "lucide-react";
 import { toast } from "sonner";
+import { useSettings } from "@/lib/useSettings";
 
 export default function Shift() {
   const { user } = useAuth();
+  const store = useSettings();
   const [current, setCurrent] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -51,8 +53,38 @@ export default function Shift() {
       toast.success(`Shift ditutup. Selisih: ${diff === 0 ? "Sesuai" : rupiah(diff)}`);
       setCloseDialog(false); setCountedCash("");
       load();
+      if (store?.enable_shift_print) setTimeout(() => printShift(data), 300);
     } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
     finally { setBusy(false); }
+  };
+
+  const printShift = (s) => {
+    const fmt = (n) => "Rp " + Math.round(n || 0).toLocaleString("id-ID");
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.write(`<html><head><title>Laporan Shift</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:24px;max-width:360px;color:#0F172A}
+        h1{font-size:18px;text-align:center;margin:0 0 4px}
+        .sub{text-align:center;color:#64748B;font-size:12px;margin-bottom:12px}
+        .row{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px dashed #CBD5E1}
+        .tot{font-weight:700;font-size:15px;border-bottom:none;padding-top:8px}
+      </style></head><body>
+      <h1>${store?.store_name || "Mandiri POS"}</h1>
+      <div class="sub">Laporan Tutup Shift</div>
+      <div class="row"><span>Kasir</span><span>${s.cashier_name || ""}</span></div>
+      <div class="row"><span>Dibuka</span><span>${new Date(s.opened_at).toLocaleString("id-ID")}</span></div>
+      <div class="row"><span>Ditutup</span><span>${s.closed_at ? new Date(s.closed_at).toLocaleString("id-ID") : "-"}</span></div>
+      <div class="row"><span>Modal Awal</span><span>${fmt(s.opening_cash)}</span></div>
+      <div class="row"><span>Penjualan Tunai</span><span>${fmt(s.cash_sales)}</span></div>
+      <div class="row"><span>Total Penjualan</span><span>${fmt(s.total_sales)}</span></div>
+      <div class="row"><span>Transaksi</span><span>${s.transactions || 0}</span></div>
+      <div class="row"><span>Kas Seharusnya</span><span>${fmt(s.expected_cash)}</span></div>
+      <div class="row"><span>Uang Dihitung</span><span>${fmt(s.counted_cash)}</span></div>
+      <div class="row tot"><span>Selisih</span><span>${s.difference === 0 ? "Sesuai" : fmt(s.difference)}</span></div>
+      </body></html>`);
+    w.document.close(); w.focus();
+    setTimeout(() => w.print(), 400);
   };
 
   if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
@@ -111,6 +143,7 @@ export default function Shift() {
                 <TableHead className="text-right">Kas Seharusnya</TableHead>
                 <TableHead className="text-right">Dihitung</TableHead>
                 <TableHead className="text-right">Selisih</TableHead>
+                <TableHead className="text-right">Cetak</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -128,6 +161,13 @@ export default function Shift() {
                       {s.difference > 0 ? <ArrowUpRight className="h-3 w-3" /> : s.difference < 0 ? <ArrowDownRight className="h-3 w-3" /> : null}
                       {rupiah(Math.abs(s.difference))}
                     </span>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {store?.enable_shift_print && (
+                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => printShift(s)} data-testid={`print-shift-${s.id}`}>
+                        <Printer className="h-4 w-4" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
