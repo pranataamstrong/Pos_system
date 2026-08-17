@@ -17,6 +17,9 @@ import logging
 import bcrypt
 import jwt
 import uuid
+import base64
+import asyncio
+from escpos.printer import Dummy, Network
 
 # ---------------- DB ----------------
 mongo_url = os.environ['MONGO_URL']
@@ -82,6 +85,8 @@ class SettingsInput(BaseModel):
     low_stock_threshold: int = 10
     point_value: float = 100
     enable_shift_print: bool = True
+    printer_ip: str = ""
+    printer_port: int = 9100
 
 class CartItem(BaseModel):
     product_id: str
@@ -112,6 +117,10 @@ class ShiftOpenInput(BaseModel):
 class ShiftCloseInput(BaseModel):
     counted_cash: float = 0.0
     note: Optional[str] = None
+
+class PrintNetworkInput(BaseModel):
+    ip: Optional[str] = None
+    port: Optional[int] = None
 
 # ---------------- Auth dependency ----------------
 async def get_current_user(request: Request) -> dict:
@@ -342,6 +351,100 @@ async def get_settings(user: dict = Depends(get_current_user)):
 async def update_settings(data: SettingsInput, admin: dict = Depends(require_admin)):
     await db.settings.update_one({"key": "store"}, {"$set": {**data.model_dump(), "key": "store"}}, upsert=True)
     return data.model_dump()
+
+# ------ Thermal Printing (ESC/POS, 80mm) ------
+def _rp(n) -> str:
+    return "Rp " + f"{int(round(n or 0)):,}".replace(",", ".")
+
+def build_receipt_bytes(sale: dict, store: dict) -> bytes:
+    """Generate ESC/POS command bytes for an 80mm (48 col) thermal receipt."""
+    d = Dummy()
+    W = 48
+    method_label = {"cash": "Tunai", "card": "Kartu", "qris": "QRIS"}
+
+    def two(left, right):
+        left, right = str(left), str(right)
+        if len(left) + len(right) >= W:
+            left = left[: max(0, W - len(right) - 1)]
+        return left + " " * (W - len(left) - len(right)) + right + "\n"
+
+    d.set(align="center", bold=True, double_width=True, double_height=True)
+    d.text((store.get("store_name") or "Mandiri POS") + "\n")
+    d.set(align="center", bold=False, double_width=False, double_height=False)
+    if store.get("address"):
+        d.text(str(store["address"]) + "\n")
+    if store.get("phone"):
+        d.text(str(store["phone"]) + "\n")
+    d.text("-" * W + "\n")
+    d.set(align="left")
+    dt = str(sale.get("created_at", ""))[:19].replace("T", " ")
+    d.text(two(sale.get("receipt_no", ""), dt))
+    d.text("Kasir: " + str(sale.get("cashier_name", "")) + "\n")
+    if sale.get("customer_name"):
+        d.text("Pelanggan: " + str(sale["customer_name"]) + "\n")
+    d.text("-" * W + "\n")
+    for it in sale.get("items", []):
+        d.text(str(it.get("name", "")) + "\n")
+        d.text(two(f"  {it.get('qty', 0)} x {_rp(it.get('price', 0))}", _rp(it.get("price", 0) * it.get("qty", 0))))
+    d.text("-" * W + "\n")
+    d.text(two("Subtotal", _rp(sale.get("subtotal", 0))))
+    if sale.get("discount", 0) > 0:
+        d.text(two("Diskon", "-" + _rp(sale["discount"])))
+    if sale.get("redeem_value", 0) > 0:
+        d.text(two(f"Tukar Poin ({sale.get('points_redeemed', 0)})", "-" + _rp(sale["redeem_value"])))
+    d.set(bold=True)
+    d.text(two("TOTAL", _rp(sale.get("total", 0))))
+    d.set(bold=False)
+    pm = method_label.get(sale.get("payment_method"), str(sale.get("payment_method", "")))
+    d.text(two(f"Bayar ({pm})", _rp(sale.get("amount_paid") or sale.get("total", 0))))
+    if sale.get("payment_method") == "cash":
+        d.text(two("Kembalian", _rp(sale.get("change", 0))))
+    if sale.get("points_earned", 0) > 0:
+        d.text(f"Poin diperoleh: +{sale['points_earned']}\n")
+    d.text("-" * W + "\n")
+    d.set(align="center")
+    d.text((store.get("footer") or "Terima kasih atas kunjungan Anda") + "\n\n")
+    try:
+        d.cut()
+    except Exception:
+        d.text("\n\n\n")
+    return d.output
+
+async def _get_sale_and_store(sale_id: str):
+    try:
+        sale = await db.sales.find_one({"_id": ObjectId(sale_id)})
+    except Exception:
+        sale = None
+    if not sale:
+        raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan")
+    settings = await db.settings.find_one({"key": "store"}) or {}
+    return serialize(sale), settings
+
+@api_router.get("/print/{sale_id}")
+async def print_receipt_bytes(sale_id: str, user: dict = Depends(get_current_user)):
+    """Return base64-encoded ESC/POS bytes (for Web Bluetooth printing from the browser)."""
+    sale, settings = await _get_sale_and_store(sale_id)
+    raw = build_receipt_bytes(sale, settings)
+    return {"data": base64.b64encode(raw).decode("ascii")}
+
+def _send_to_network_printer(ip: str, port: int, raw: bytes):
+    p = Network(ip, port=port, timeout=8)
+    p._raw(raw)
+    p.close()
+
+@api_router.post("/print/{sale_id}/network")
+async def print_receipt_network(sale_id: str, body: PrintNetworkInput, user: dict = Depends(get_current_user)):
+    sale, settings = await _get_sale_and_store(sale_id)
+    ip = body.ip or settings.get("printer_ip")
+    port = int(body.port or settings.get("printer_port") or 9100)
+    if not ip:
+        raise HTTPException(status_code=400, detail="IP printer belum diatur. Isi di Pengaturan.")
+    raw = build_receipt_bytes(sale, settings)
+    try:
+        await asyncio.to_thread(_send_to_network_printer, ip, port, raw)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Gagal terhubung ke printer {ip}:{port}. {str(e)[:120]}")
+    return {"ok": True, "message": f"Struk dikirim ke {ip}:{port}"}
 
 # ------ Notifications (low stock, in-app) ------
 @api_router.get("/notifications")

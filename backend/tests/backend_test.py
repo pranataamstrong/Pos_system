@@ -589,3 +589,117 @@ class TestRedeemPoints:
         else:
             assert r.status_code == 400
         requests.delete(f"{API}/products/{p['id']}", headers=admin_headers)
+
+
+
+# ---------------- Iteration 5: ESC/POS Print ----------------
+import base64 as _b64
+
+
+class TestPrint:
+    def _make_sale(self, admin_headers):
+        p = requests.post(f"{API}/products", headers=admin_headers,
+                          json={"name": "TEST_PrintProd", "price": 12345, "cost": 5000, "stock": 20}).json()
+        pay = {
+            "items": [{"product_id": p["id"], "name": p["name"], "price": 12345, "cost": 5000, "qty": 2}],
+            "payment_method": "cash", "amount_paid": 30000,
+        }
+        s = requests.post(f"{API}/sales", headers=admin_headers, json=pay)
+        assert s.status_code == 200, s.text
+        return p["id"], s.json()["id"]
+
+    def test_print_bytes_contains_store_and_cut(self, admin_headers):
+        pid, sid = self._make_sale(admin_headers)
+        r = requests.get(f"{API}/print/{sid}", headers=admin_headers)
+        assert r.status_code == 200, r.text
+        data = r.json().get("data")
+        assert isinstance(data, str) and len(data) > 0
+        raw = _b64.b64decode(data)
+        assert len(raw) > 100
+        # Store name
+        assert b"Mandiri POS" in raw or b"TEST_PrintProd" in raw
+        # Item name should appear
+        assert b"TEST_PrintProd" in raw
+        # TOTAL label
+        assert b"TOTAL" in raw
+        # GS V paper cut command
+        assert b"\x1d\x56" in raw
+        # cleanup
+        requests.delete(f"{API}/products/{pid}", headers=admin_headers)
+
+    def test_print_bytes_404_for_unknown_sale(self, admin_headers):
+        r = requests.get(f"{API}/print/507f1f77bcf86cd799439011", headers=admin_headers)
+        assert r.status_code == 404
+
+    def test_print_bytes_requires_auth(self):
+        r = requests.get(f"{API}/print/507f1f77bcf86cd799439011")
+        assert r.status_code in (401, 403)
+
+    def test_network_print_no_ip_configured_returns_400(self, admin_headers):
+        # Ensure printer_ip empty in settings
+        cur = requests.get(f"{API}/settings", headers=admin_headers).json()
+        original_ip = cur.get("printer_ip", "")
+        original_port = cur.get("printer_port", 9100)
+        cur["printer_ip"] = ""
+        requests.put(f"{API}/settings", headers=admin_headers, json=cur)
+
+        pid, sid = self._make_sale(admin_headers)
+        r = requests.post(f"{API}/print/{sid}/network", headers=admin_headers, json={})
+        assert r.status_code == 400
+        detail = r.json().get("detail", "")
+        assert "IP printer" in detail or "belum diatur" in detail
+
+        # restore
+        cur["printer_ip"] = original_ip
+        cur["printer_port"] = original_port
+        requests.put(f"{API}/settings", headers=admin_headers, json=cur)
+        requests.delete(f"{API}/products/{pid}", headers=admin_headers)
+
+    def test_network_print_unreachable_ip_returns_400(self, admin_headers):
+        pid, sid = self._make_sale(admin_headers)
+        r = requests.post(f"{API}/print/{sid}/network", headers=admin_headers,
+                          json={"ip": "192.168.1.250", "port": 9100})
+        assert r.status_code == 400
+        detail = r.json().get("detail", "")
+        assert "Gagal terhubung" in detail
+        requests.delete(f"{API}/products/{pid}", headers=admin_headers)
+
+
+class TestPrinterSettings:
+    def test_defaults_include_printer_fields(self, admin_headers):
+        r = requests.get(f"{API}/settings", headers=admin_headers)
+        assert r.status_code == 200
+        d = r.json()
+        assert "printer_ip" in d
+        assert "printer_port" in d
+        assert isinstance(d["printer_port"], int)
+
+    def test_put_printer_fields_persist_admin(self, admin_headers):
+        cur = requests.get(f"{API}/settings", headers=admin_headers).json()
+        original_ip = cur.get("printer_ip", "")
+        original_port = cur.get("printer_port", 9100)
+        cur["printer_ip"] = "10.0.0.99"
+        cur["printer_port"] = 9101
+        r = requests.put(f"{API}/settings", headers=admin_headers, json=cur)
+        assert r.status_code == 200
+        d = requests.get(f"{API}/settings", headers=admin_headers).json()
+        assert d["printer_ip"] == "10.0.0.99"
+        assert d["printer_port"] == 9101
+        # restore (spec says reset printer_ip to '' after testing)
+        cur["printer_ip"] = ""
+        cur["printer_port"] = 9100
+        requests.put(f"{API}/settings", headers=admin_headers, json=cur)
+        d2 = requests.get(f"{API}/settings", headers=admin_headers).json()
+        assert d2["printer_ip"] == ""
+        assert d2["printer_port"] == 9100
+
+    def test_cashier_cannot_put_printer_settings(self, admin_headers):
+        email = f"test_prn_cashier_{int(time.time())}@example.com"
+        requests.post(f"{API}/auth/register", headers=admin_headers,
+                      json={"email": email, "password": "pass1234", "name": "PRNC", "role": "cashier"})
+        tok = requests.post(f"{API}/auth/login", json={"email": email, "password": "pass1234"}).json()["token"]
+        ch = {"Authorization": f"Bearer {tok}"}
+        cur = requests.get(f"{API}/settings", headers=ch).json()
+        cur["printer_ip"] = "10.0.0.5"
+        r = requests.put(f"{API}/settings", headers=ch, json=cur)
+        assert r.status_code == 403

@@ -98,6 +98,15 @@ export default function Settings() {
             </div>
             <Switch checked={form.enable_shift_print ?? true} onCheckedChange={(v) => setForm({ ...form, enable_shift_print: v })} data-testid="settings-shift-print-switch" />
           </div>
+          <div className="space-y-2">
+            <Label>Printer Jaringan — IP</Label>
+            <Input value={form.printer_ip || ""} onChange={(e) => setForm({ ...form, printer_ip: e.target.value })} placeholder="mis. 192.168.1.100" data-testid="settings-printer-ip-input" />
+          </div>
+          <div className="space-y-2">
+            <Label>Port Printer</Label>
+            <Input type="number" value={form.printer_port ?? 9100} onChange={(e) => setForm({ ...form, printer_port: Number(e.target.value) })} data-testid="settings-printer-port-input" />
+            <p className="text-xs text-muted-foreground">Untuk printer thermal 80mm ESC/POS (mis. Blueprint Eco80). Port default 9100. Bluetooth dicetak langsung dari perangkat via menu Cetak.</p>
+          </div>
           <Button onClick={save} disabled={saving} data-testid="save-settings-button">
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Simpan
           </Button>

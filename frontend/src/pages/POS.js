@@ -33,6 +33,7 @@ import {
 import { toast } from "sonner";
 import Receipt from "@/components/Receipt";
 import { useSettings } from "@/lib/useSettings";
+import PrintMenu from "@/components/PrintMenu";
 
 export default function POS() {
   const { user } = useAuth();
@@ -490,9 +491,7 @@ export default function POS() {
           </DialogHeader>
           {lastSale && <Receipt sale={lastSale} cashier={user?.name} store={store} />}
           <DialogFooter className="flex-row gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => window.print()} data-testid="print-receipt-button">
-              <Printer className="mr-2 h-4 w-4" /> Cetak
-            </Button>
+            <PrintMenu saleId={lastSale?.id} className="flex-1" />
             <Button className="flex-1" onClick={() => setLastSale(null)} data-testid="new-transaction-button">
               Transaksi Baru
             </Button>
