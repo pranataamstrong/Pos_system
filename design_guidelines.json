@@ -1,0 +1,129 @@
+{
+  "app_name": "Mandiri POS",
+  "theme_preference": "Light mode by default (optimizes visibility for fast cashier tasks), with optional dark mode toggle.",
+  "typography": {
+    "heading_font": "Clash Display",
+    "body_font": "Manrope",
+    "usage": {
+      "h1": "text-4xl sm:text-5xl font-semibold tracking-tight",
+      "h2": "text-2xl sm:text-3xl font-medium tracking-tight",
+      "h3": "text-xl sm:text-2xl font-medium",
+      "body": "text-base leading-relaxed",
+      "labels": "text-xs font-bold uppercase tracking-[0.2em]"
+    },
+    "notes": "Do not use Inter, Roboto, Open Sans, or Lato for headings. Use Clash Display for structural headings and Manrope for data-heavy tables and general text."
+  },
+  "colors": {
+    "archetype": "SWISS & HIGH-CONTRAST (Modified for Business POS)",
+    "palette": {
+      "primary": "#4338CA",
+      "primary_hover": "#3730A3",
+      "background": "#F8FAFC",
+      "surface": "#FFFFFF",
+      "text_primary": "#0F172A",
+      "text_secondary": "#64748B",
+      "border": "#E2E8F0",
+      "success": "#10B981",
+      "warning": "#F59E0B",
+      "error": "#EF4444"
+    },
+    "rules": "Avoid default SaaS blue. Never use pure black (#000000). Ensure APCA contrast ratio compliance. Use primary color exclusively for primary actions (Checkout, Add, Save). Do not use teal green/blue (#1B93A4)."
+  },
+  "layouts": {
+    "spacing_system": "Generous spacing. Use p-4 to p-8 for containers. Use tailwind scale.",
+    "pos_cashier_screen": {
+      "structure": "Split screen layout: 65% left (Product Grid), 35% right (Cart Panel).",
+      "product_grid": "Grid layout: grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4. Minimalist product cards without drop shadows. Focus on the image and price.",
+      "cart_panel": "Sticky to the right side, height full screen (h-screen). Flex column layout. Items list takes flex-1 (scrollable). Checkout total and button fixed at bottom."
+    },
+    "dashboard_screen": {
+      "structure": "High Density Grid. grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6.",
+      "widgets": "Flat background, 1px subtle border, no shadow. Hover: slight lift (-translate-y-1), subtle shadow. Use recharts for data visualization."
+    }
+  },
+  "components": {
+    "ui_library": "shadcn/ui",
+    "general": "Do not use HTML-based components for advanced interactions. Use shadcn dropdown, dialog, table, tabs.",
+    "buttons": "Pill-shaped or rounded-lg with distinct interaction animations (hover:bg-primary/90).",
+    "inputs": "Solid borders, light background. focus:ring-2 focus:ring-primary/20 focus:border-primary.",
+    "cards": "Cardless or sharp rectangular edges with max 8px border-radius (rounded-lg). Avoid heavy box-shadows. Use 1px borders (border-border).",
+    "toast": "Use sonner for notifications (e.g., 'Produk ditambahkan', 'Pembayaran berhasil').",
+    "tables": "Use shadcn table. Left align text, right align numerical values (Currency).",
+    "data_visualization": "Use recharts for sales trends and category breakdown."
+  },
+  "motion": {
+    "hover_states": "All interactive elements must have hover states (e.g., button hover color, card -translate-y-1).",
+    "transitions": "Use specific transition properties (e.g., transition-colors, transition-transform duration-200 ease-in-out). Do not use transition-all.",
+    "entrance": "Staggered fade-in for product grid items."
+  },
+  "accessibility": {
+    "contrast": "Text over images must use gradient overlays or text-shadow for readability.",
+    "focus": "High contrast focus rings on interactive elements.",
+    "testing": "All interactive and key informational elements MUST include a `data-testid` attribute (e.g., `data-testid=\"checkout-button\"`)."
+  },
+  "media": {
+    "products": [
+      {
+        "url": "https://images.pexels.com/photos/34773646/pexels-photo-34773646.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "category": "pastry",
+        "description": "Croissant and coffee"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1637419226404-aab6130b2a61?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODF8MHwxfHNlYXJjaHwyfHxjb2ZmZWUlMjBjdXAlMjBwYXN0cnl8ZW58MHx8fHwxNzg2OTQ2NTcyfDA&ixlib=rb-4.1.0&q=85",
+        "category": "pastry",
+        "description": "Cake slice"
+      },
+      {
+        "url": "https://images.pexels.com/photos/9395559/pexels-photo-9395559.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "category": "pastry",
+        "description": "Cream puffs"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1612880202987-b1ec29fb0839?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODF8MHwxfHNlYXJjaHwxfHxjb2ZmZWUlMjBjdXAlMjBwYXN0cnl8ZW58MHx8fHwxNzg2OTQ2NTcyfDA&ixlib=rb-4.1.0&q=85",
+        "category": "coffee",
+        "description": "White coffee cup"
+      }
+    ],
+    "avatars": [
+      {
+        "url": "https://images.pexels.com/photos/4199488/pexels-photo-4199488.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "category": "cashier",
+        "description": "Female cashier"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1740252117070-7aa2955b25f8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHwzfHxjYXNoaWVyJTIwYXZhdGFyfGVufDB8fHx8MTc4Njk0NjU3Mnww&ixlib=rb-4.1.0&q=85",
+        "category": "admin",
+        "description": "3D character avatar"
+      }
+    ]
+  },
+  "specific_requirements": {
+    "localization": "Language: Bahasa Indonesia. Currency: Rupiah (Rp). Format currency as Rp X.XXX.XXX.",
+    "features": [
+      "Login screen (admin & cashier)",
+      "POS Cashier screen: product grid, category filter, shopping cart, checkout (cash/card/QRIS), receipt printing simulation",
+      "Product & Category management (CRUD, stock/inventory)",
+      "Complete Reports dashboard (sales over time, top products, profit, sales by category, payment method breakdown, date range filters)",
+      "User management (admin adds cashiers)",
+      "Sales history / transactions list"
+    ]
+  },
+  "universal_guidelines": [
+    "Do not use generic centered layouts, simplistic gradients, and uniform styling.",
+    "Do not apply universal transitions like 'transition: all'. Target specific properties.",
+    "Do not center align the app container. No '.App { text-align: center; }'.",
+    "Never use AI assistant emoji characters like 🤖🧠💭💡🔮🎯 for icons.",
+    "Every interaction needs micro-animations - hover states, transitions.",
+    "Use 2-3x more spacing than feels comfortable.",
+    "Prioritize using pre-existing components from src/components/ui.",
+    "Use Phosphor Icons (@phosphor-icons/react) or Lucide-react for iconography. No generic SVGs without a unified style."
+  ],
+  "instructions_to_main_agent": {
+    "step_1": "Setup routing and pages for Login, POS Cashier, Dashboard (Reports), Product Management, Category Management, User Management, and History.",
+    "step_2": "Implement the POS Cashier screen focusing on speed and layout (split grid/cart). Populate with mock data and the provided product images.",
+    "step_3": "Implement the Reports Dashboard utilizing Recharts for data visualization (Sales over time, top products pie chart).",
+    "step_4": "Implement CRUD views for Products and Categories. Make use of shadcn dialogs and forms.",
+    "step_5": "Ensure all text uses Bahasa Indonesia and currency is properly formatted as Rupiah.",
+    "step_6": "Integrate 'sonner' for toast notifications on actions like Add to Cart, Checkout, and Save."
+  }
+}
