@@ -299,3 +299,172 @@ class TestStockGuard:
         p = next(x for x in prods if x["id"] == pid)
         assert p.get("barcode") == "TESTBC123"
         requests.delete(f"{API}/products/{pid}", headers=admin_headers)
+
+
+# ---------------- Notifications (iteration 3) ----------------
+class TestNotifications:
+    def test_shape_and_threshold_effect(self, admin_headers):
+        r = requests.get(f"{API}/notifications", headers=admin_headers)
+        assert r.status_code == 200
+        d = r.json()
+        for k in ("threshold", "count", "items"):
+            assert k in d
+        assert isinstance(d["items"], list)
+        assert d["count"] == len(d["items"])
+        # set threshold very high via settings and expect items > 0
+        s = requests.get(f"{API}/settings", headers=admin_headers).json()
+        s["low_stock_threshold"] = 9999
+        r = requests.put(f"{API}/settings", headers=admin_headers, json=s)
+        assert r.status_code == 200
+        r = requests.get(f"{API}/notifications", headers=admin_headers)
+        d = r.json()
+        assert d["threshold"] == 9999
+        assert d["count"] > 0
+        # restore
+        s["low_stock_threshold"] = 10
+        requests.put(f"{API}/settings", headers=admin_headers, json=s)
+
+
+# ---------------- Customers CRUD + role restrictions ----------------
+class TestCustomers:
+    def test_crud_admin(self, admin_headers):
+        r = requests.post(f"{API}/customers", headers=admin_headers,
+                          json={"name": "TEST_Cust", "phone": "0812", "email": None})
+        assert r.status_code == 200
+        c = r.json()
+        assert c["name"] == "TEST_Cust"
+        assert c["points"] == 0
+        cid = c["id"]
+        # get list
+        r2 = requests.get(f"{API}/customers", headers=admin_headers)
+        assert any(x["id"] == cid for x in r2.json())
+        # update
+        r = requests.put(f"{API}/customers/{cid}", headers=admin_headers,
+                        json={"name": "TEST_Cust2", "phone": "0813"})
+        assert r.status_code == 200
+        assert r.json()["name"] == "TEST_Cust2"
+        # delete
+        r = requests.delete(f"{API}/customers/{cid}", headers=admin_headers)
+        assert r.status_code == 200
+
+    def test_cashier_can_list_and_create_but_not_edit_delete(self, admin_headers):
+        email = f"test_cashier_cust_{int(time.time())}@example.com"
+        r = requests.post(f"{API}/auth/register", headers=admin_headers,
+                          json={"email": email, "password": "pass1234", "name": "CC", "role": "cashier"})
+        uid = r.json()["id"]
+        tok = requests.post(f"{API}/auth/login", json={"email": email, "password": "pass1234"}).json()["token"]
+        ch = {"Authorization": f"Bearer {tok}"}
+        # list ok
+        assert requests.get(f"{API}/customers", headers=ch).status_code == 200
+        # create ok
+        r = requests.post(f"{API}/customers", headers=ch, json={"name": "TEST_C2", "phone": ""})
+        assert r.status_code == 200
+        cid = r.json()["id"]
+        # edit forbidden
+        r = requests.put(f"{API}/customers/{cid}", headers=ch, json={"name": "X", "phone": ""})
+        assert r.status_code == 403
+        # delete forbidden
+        r = requests.delete(f"{API}/customers/{cid}", headers=ch)
+        assert r.status_code == 403
+        # cleanup by admin
+        requests.delete(f"{API}/customers/{cid}", headers=admin_headers)
+        requests.delete(f"{API}/users/{uid}", headers=admin_headers)
+
+
+# ---------------- Percent discount + Points on checkout ----------------
+class TestDiscountAndPoints:
+    def test_percent_discount_and_points(self, admin_headers):
+        # create product with predictable price
+        r = requests.post(f"{API}/products", headers=admin_headers,
+                          json={"name": "TEST_DiscProd", "price": 10000, "cost": 4000, "stock": 20})
+        p = r.json()
+        # create customer
+        r = requests.post(f"{API}/customers", headers=admin_headers,
+                          json={"name": "TEST_LoyalCust", "phone": ""})
+        cust = r.json()
+        cid = cust["id"]
+        # checkout: 1 * 10000, percent 10 -> discount 1000, total 9000
+        payload = {
+            "items": [{"product_id": p["id"], "name": p["name"], "price": 10000, "cost": 4000, "qty": 1}],
+            "discount": 1000,
+            "discount_type": "percent",
+            "discount_value": 10,
+            "payment_method": "cash",
+            "amount_paid": 10000,
+            "customer_id": cid,
+        }
+        r = requests.post(f"{API}/sales", headers=admin_headers, json=payload)
+        assert r.status_code == 200, r.text
+        sale = r.json()
+        assert sale["subtotal"] == 10000
+        assert sale["total"] == 9000
+        assert sale["discount_type"] == "percent"
+        assert sale["discount_value"] == 10
+        assert sale["customer_name"] == "TEST_LoyalCust"
+        assert sale["points_earned"] == 9  # floor(9000/1000)
+        # customer points updated
+        cust2 = next(c for c in requests.get(f"{API}/customers", headers=admin_headers).json() if c["id"] == cid)
+        assert cust2["points"] == 9
+        assert cust2["total_spent"] == 9000
+        # cleanup
+        requests.delete(f"{API}/customers/{cid}", headers=admin_headers)
+        requests.delete(f"{API}/products/{p['id']}", headers=admin_headers)
+
+
+# ---------------- Shifts open/close ----------------
+class TestShifts:
+    def test_full_shift_cycle(self, admin_headers):
+        # create dedicated cashier so we don't collide with admin's shift
+        email = f"test_shift_cashier_{int(time.time())}@example.com"
+        r = requests.post(f"{API}/auth/register", headers=admin_headers,
+                          json={"email": email, "password": "pass1234", "name": "SS", "role": "cashier"})
+        uid = r.json()["id"]
+        tok = requests.post(f"{API}/auth/login", json={"email": email, "password": "pass1234"}).json()["token"]
+        ch = {"Authorization": f"Bearer {tok}"}
+
+        # no active shift
+        r = requests.get(f"{API}/shifts/current", headers=ch)
+        assert r.status_code == 200
+        assert r.json() is None
+
+        # open shift
+        r = requests.post(f"{API}/shifts/open", headers=ch, json={"opening_cash": 50000})
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "open"
+        assert r.json()["opening_cash"] == 50000
+
+        # cannot open twice (400 or 409)
+        r = requests.post(f"{API}/shifts/open", headers=ch, json={"opening_cash": 0})
+        assert r.status_code in (400, 409)
+
+        # create product and make a cash sale under this shift
+        rp = requests.post(f"{API}/products", headers=admin_headers,
+                           json={"name": "TEST_ShiftProd", "price": 5000, "cost": 2000, "stock": 10})
+        p = rp.json()
+        pay = {"items": [{"product_id": p["id"], "name": p["name"], "price": 5000, "cost": 2000, "qty": 2}],
+               "payment_method": "cash", "amount_paid": 10000}
+        rs = requests.post(f"{API}/sales", headers=ch, json=pay)
+        assert rs.status_code == 200, rs.text
+
+        # close shift with counted_cash matching expected
+        # expected_cash = 50000 + 10000 = 60000, put counted = 60500 -> diff 500
+        rc = requests.post(f"{API}/shifts/close", headers=ch, json={"counted_cash": 60500})
+        assert rc.status_code == 200
+        closed = rc.json()
+        assert closed["status"] == "closed"
+        assert closed["expected_cash"] == 60000
+        assert closed["cash_sales"] == 10000
+        assert closed["difference"] == 500
+
+        # list shifts contains it
+        rl = requests.get(f"{API}/shifts", headers=ch)
+        assert rl.status_code == 200
+        assert any(s["status"] == "closed" for s in rl.json())
+
+        # close again -> 400
+        rc2 = requests.post(f"{API}/shifts/close", headers=ch, json={"counted_cash": 0})
+        assert rc2.status_code == 400
+
+        # cleanup
+        requests.delete(f"{API}/products/{p['id']}", headers=admin_headers)
+        requests.delete(f"{API}/users/{uid}", headers=admin_headers)

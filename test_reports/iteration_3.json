@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 3 tested the 4 new features (notifications, percent discount, cashier shift, customers + loyalty points) end-to-end. Backend: 30/30 pytest tests pass (added TestNotifications, TestCustomers, TestDiscountAndPoints, TestShifts covering CRUD, role gating, percent-discount math, points award, shift open/close reconciliation). Frontend (Playwright, admin login): notification bell shows badge with count=10 after raising threshold via Settings; dropdown lists low-stock items. Customer created via /customers page; selected in POS payment dialog. Percent discount 10% on Rp18.000 cart correctly reduced total to Rp16.200 (potongan Rp1.800) — matches backend. Receipt dialog displays customer name and 'Poin diperoleh'. Shift page: open with Rp100.000, close with Rp100.500 -> row appears in history with difference badge. Threshold restored to 10 at end.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/shifts/open", "issue": "Returns 400 when a shift is already open. Spec text mentioned 409 or 400; 400 is acceptable but 409 Conflict would be more semantically correct."},
+      {"endpoint": "POST /api/customers", "issue": "Any authenticated user (including cashier) can create customers. Product spec only restricts edit/delete for cashier, so this is intentional but worth confirming."},
+      {"endpoint": "POST /api/sales customer_id", "issue": "If customer_id references a non-existent Customer, the sale is still saved (customer_name=null, points_earned=0) with no 404. Consider validating."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Settings", "issues": ["Toast 'Pengaturan toko disimpan' overlaps with dialog top area (minor)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Optional) Return HTTP 409 instead of 400 for /api/shifts/open when a shift is already open.",
+    "(Optional) Validate customer_id existence at POST /api/sales and return 400/404 if invalid.",
+    "(Carry-over) Login.js navigate-in-render warning and DialogDescription a11y warnings from prior iteration."
+  ],
+  "critical_code_review_comments": [
+    "server.py checkout(): stock aggregation by product_id is now correct (fixed vs iteration 2 feedback).",
+    "server.py checkout(): loyalty points computed as floor(total/1000) matches spec.",
+    "server.py close_shift(): correctly computes expected_cash = opening_cash + cash_sales and difference; only counts cash sales for expected.",
+    "server.py get_notifications(): reads low_stock_threshold from settings with default 10 — good.",
+    "NotificationBell.js: fetches /notifications only on mount; a badge won't refresh after new sales unless component re-mounts. Consider polling or refetch after checkout.",
+    "POS.js: customerId 'none' sentinel used to bypass empty-string SelectItem constraint — clean workaround.",
+    "POS.js: percent discount rounded via Math.round; backend receives already-computed `discount` amount (in Rp) plus discount_type/discount_value for audit — good.",
+    "Shift.js: renders active shift and history correctly, closes+reopens works. No edge case for admin viewing all shifts vs cashier viewing own — implemented in backend list_shifts.",
+    "Customers.js: edit/delete buttons hidden for cashier via isAdmin flag — matches spec."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (30/30)", "frontend": "100% of tested flows"},
+  "test_credentials": "Admin: pranataamstrong@gmail.com / admin123",
+  "seed_data_creation": "Created TEST_UI_Cust_<ts> customer via UI; also several TEST_ prefixed customers/products from backend tests are cleaned up. Left ~3 closed shifts in history from test runs (admin owner shifts).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "backend_test.py now has 30 tests (added TestNotifications, TestCustomers, TestDiscountAndPoints, TestShifts). Store settings currently: 'TEST Toko Kopi', threshold restored to 10. Owner (admin) has ~3 closed shifts in history from testing.",
+  "rca of the issue": "N/A - no blocking issues."
+}

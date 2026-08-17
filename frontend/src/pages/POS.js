@@ -12,6 +12,9 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
   Search,
   Plus,
   Minus,
@@ -24,6 +27,7 @@ import {
   Printer,
   CheckCircle2,
   ScanLine,
+  UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import Receipt from "@/components/Receipt";
@@ -44,15 +48,19 @@ export default function POS() {
   const [method, setMethod] = useState("cash");
   const [amountPaid, setAmountPaid] = useState("");
   const [discount, setDiscount] = useState("");
+  const [discountType, setDiscountType] = useState("amount");
+  const [customers, setCustomers] = useState([]);
+  const [customerId, setCustomerId] = useState("none");
   const [processing, setProcessing] = useState(false);
   const [lastSale, setLastSale] = useState(null);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [p, c] = await Promise.all([api.get("/products"), api.get("/categories")]);
+      const [p, c, cust] = await Promise.all([api.get("/products"), api.get("/categories"), api.get("/customers")]);
       setProducts(p.data);
       setCategories(c.data);
+      setCustomers(cust.data);
     } catch (e) {
       toast.error("Gagal memuat data");
     } finally {
@@ -121,7 +129,8 @@ export default function POS() {
   };
 
   const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
-  const disc = Number(discount) || 0;
+  const discInput = Number(discount) || 0;
+  const disc = discountType === "percent" ? Math.round((subtotal * discInput) / 100) : discInput;
   const total = Math.max(0, subtotal - disc);
   const change = method === "cash" ? Math.max(0, (Number(amountPaid) || 0) - total) : 0;
 
@@ -129,7 +138,6 @@ export default function POS() {
     if (cart.length === 0) return toast.error("Keranjang masih kosong");
     setMethod("cash");
     setAmountPaid("");
-    setDiscount(discount);
     setPayOpen(true);
   };
 
@@ -141,12 +149,17 @@ export default function POS() {
       const { data } = await api.post("/sales", {
         items: cart.map((i) => ({ ...i })),
         discount: disc,
+        discount_type: discountType,
+        discount_value: discInput,
+        customer_id: customerId === "none" ? null : customerId,
         payment_method: method,
         amount_paid: method === "cash" ? Number(amountPaid) || total : total,
       });
       setLastSale(data);
       setCart([]);
       setDiscount("");
+      setDiscountType("amount");
+      setCustomerId("none");
       setPayOpen(false);
       toast.success("Pembayaran berhasil!");
       load();
@@ -333,8 +346,40 @@ export default function POS() {
             </div>
 
             <div className="space-y-2">
-              <Label>Diskon (Rp)</Label>
-              <Input type="number" min="0" placeholder="0" value={discount} onChange={(e) => setDiscount(e.target.value)} data-testid="discount-input" />
+              <Label>Pelanggan (opsional)</Label>
+              <Select value={customerId} onValueChange={setCustomerId}>
+                <SelectTrigger data-testid="customer-select">
+                  <SelectValue placeholder="Tanpa pelanggan" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Tanpa Pelanggan</SelectItem>
+                  {customers.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name} · {c.points || 0} poin</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Diskon</Label>
+              <div className="flex gap-2">
+                <div className="inline-flex overflow-hidden rounded-lg border border-border">
+                  <button
+                    onClick={() => setDiscountType("amount")}
+                    data-testid="discount-type-amount"
+                    className={`px-3 py-2 text-sm font-medium transition-colors ${discountType === "amount" ? "bg-primary text-primary-foreground" : "hover:bg-secondary"}`}
+                  >Rp</button>
+                  <button
+                    onClick={() => setDiscountType("percent")}
+                    data-testid="discount-type-percent"
+                    className={`px-3 py-2 text-sm font-medium transition-colors ${discountType === "percent" ? "bg-primary text-primary-foreground" : "hover:bg-secondary"}`}
+                  >%</button>
+                </div>
+                <Input type="number" min="0" placeholder="0" value={discount} onChange={(e) => setDiscount(e.target.value)} className="flex-1" data-testid="discount-input" />
+              </div>
+              {disc > 0 && (
+                <p className="text-xs text-muted-foreground">Potongan: {rupiah(disc)}{discountType === "percent" ? ` (${discInput}%)` : ""}</p>
+              )}
             </div>
 
             <div className="space-y-2">

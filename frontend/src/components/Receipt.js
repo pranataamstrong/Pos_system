@@ -22,6 +22,7 @@ export default function Receipt({ sale, cashier, store }) {
         <span>{date.toLocaleString("id-ID")}</span>
       </div>
       <p className="text-xs text-slate-500">Kasir: {cashier || sale.cashier_name}</p>
+      {sale.customer_name ? <p className="text-xs text-slate-500">Pelanggan: {sale.customer_name}</p> : null}
       <div className="my-3 border-t border-dashed border-slate-300" />
       <div className="space-y-1.5">
         {sale.items.map((i, idx) => (
@@ -62,6 +63,9 @@ export default function Receipt({ sale, cashier, store }) {
         )}
       </div>
       <div className="my-3 border-t border-dashed border-slate-300" />
+      {sale.points_earned > 0 && (
+        <p className="text-center text-xs font-medium text-indigo-600">Poin diperoleh: +{sale.points_earned}</p>
+      )}
       <p className="text-center text-xs text-slate-400">{footer}</p>
     </div>
   );

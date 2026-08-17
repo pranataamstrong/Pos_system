@@ -79,6 +79,7 @@ class SettingsInput(BaseModel):
     phone: str = ""
     logo: Optional[str] = None
     footer: str = "Terima kasih atas kunjungan Anda"
+    low_stock_threshold: int = 10
 
 class CartItem(BaseModel):
     product_id: str
@@ -90,8 +91,23 @@ class CartItem(BaseModel):
 class CheckoutInput(BaseModel):
     items: List[CartItem]
     discount: float = 0.0
+    discount_type: str = "amount"  # amount | percent
+    discount_value: float = 0.0
     payment_method: str  # cash | card | qris
     amount_paid: float = 0.0
+    customer_id: Optional[str] = None
+    note: Optional[str] = None
+
+class CustomerInput(BaseModel):
+    name: str
+    phone: str = ""
+    email: Optional[str] = None
+
+class ShiftOpenInput(BaseModel):
+    opening_cash: float = 0.0
+
+class ShiftCloseInput(BaseModel):
+    counted_cash: float = 0.0
     note: Optional[str] = None
 
 # ---------------- Auth dependency ----------------
@@ -245,18 +261,37 @@ async def checkout(data: CheckoutInput, user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=400, detail=f"Stok '{prod.get('name', '')}' tidak mencukupi (sisa {prod.get('stock', 0)})")
     subtotal = sum(i.price * i.qty for i in data.items)
     total_cost = sum(i.cost * i.qty for i in data.items)
-    total = subtotal - data.discount
+    total = max(0.0, subtotal - data.discount)
     profit = total - total_cost
     change = max(0.0, data.amount_paid - total) if data.payment_method == "cash" else 0.0
     receipt_no = "INV-" + datetime.now(timezone.utc).strftime("%Y%m%d") + "-" + uuid.uuid4().hex[:6].upper()
+    # active shift for this cashier
+    shift = await db.shifts.find_one({"cashier_id": user["id"], "status": "open"})
+    shift_id = str(shift["_id"]) if shift else None
+    # loyalty points + customer info
+    customer_name = None
+    points_earned = 0
+    if data.customer_id:
+        try:
+            cust = await db.customers.find_one({"_id": ObjectId(data.customer_id)})
+        except Exception:
+            cust = None
+        if cust:
+            customer_name = cust.get("name")
+            points_earned = int(total // 1000)
     doc = {
         "receipt_no": receipt_no,
         "cashier_id": user["id"], "cashier_name": user.get("name", ""),
         "items": [i.model_dump() for i in data.items],
-        "subtotal": subtotal, "discount": data.discount, "total": total,
-        "total_cost": total_cost, "profit": profit,
+        "subtotal": subtotal, "discount": data.discount,
+        "discount_type": data.discount_type, "discount_value": data.discount_value,
+        "total": total, "total_cost": total_cost, "profit": profit,
         "payment_method": data.payment_method, "amount_paid": data.amount_paid,
-        "change": change, "note": data.note, "created_at": now_iso(),
+        "change": change, "note": data.note,
+        "shift_id": shift_id,
+        "customer_id": data.customer_id, "customer_name": customer_name,
+        "points_earned": points_earned,
+        "created_at": now_iso(),
     }
     res = await db.sales.insert_one(doc)
     doc["_id"] = res.inserted_id
@@ -264,6 +299,13 @@ async def checkout(data: CheckoutInput, user: dict = Depends(get_current_user)):
     for i in data.items:
         try:
             await db.products.update_one({"_id": ObjectId(i.product_id)}, {"$inc": {"stock": -i.qty}})
+        except Exception:
+            pass
+    # award loyalty points
+    if data.customer_id and points_earned >= 0:
+        try:
+            await db.customers.update_one({"_id": ObjectId(data.customer_id)},
+                                          {"$inc": {"points": points_earned, "total_spent": total}})
         except Exception:
             pass
     return serialize(doc)
@@ -288,6 +330,86 @@ async def get_settings(user: dict = Depends(get_current_user)):
 async def update_settings(data: SettingsInput, admin: dict = Depends(require_admin)):
     await db.settings.update_one({"key": "store"}, {"$set": {**data.model_dump(), "key": "store"}}, upsert=True)
     return data.model_dump()
+
+# ------ Notifications (low stock, in-app) ------
+@api_router.get("/notifications")
+async def get_notifications(user: dict = Depends(get_current_user)):
+    settings = await db.settings.find_one({"key": "store"})
+    threshold = settings.get("low_stock_threshold", 10) if settings else 10
+    prods = await db.products.find({"stock": {"$lte": threshold}}).sort("stock", 1).to_list(200)
+    items = [{"id": str(p["_id"]), "name": p["name"], "stock": p.get("stock", 0)} for p in prods]
+    return {"threshold": threshold, "count": len(items), "items": items}
+
+# ------ Customers ------
+@api_router.get("/customers")
+async def list_customers(user: dict = Depends(get_current_user)):
+    custs = await db.customers.find().sort("name", 1).to_list(2000)
+    return [serialize(c) for c in custs]
+
+@api_router.post("/customers")
+async def create_customer(data: CustomerInput, user: dict = Depends(get_current_user)):
+    doc = data.model_dump()
+    doc.update({"points": 0, "total_spent": 0.0, "created_at": now_iso()})
+    res = await db.customers.insert_one(doc)
+    doc["_id"] = res.inserted_id
+    return serialize(doc)
+
+@api_router.put("/customers/{cust_id}")
+async def update_customer(cust_id: str, data: CustomerInput, admin: dict = Depends(require_admin)):
+    await db.customers.update_one({"_id": ObjectId(cust_id)}, {"$set": data.model_dump()})
+    doc = await db.customers.find_one({"_id": ObjectId(cust_id)})
+    return serialize(doc)
+
+@api_router.delete("/customers/{cust_id}")
+async def delete_customer(cust_id: str, admin: dict = Depends(require_admin)):
+    await db.customers.delete_one({"_id": ObjectId(cust_id)})
+    return {"ok": True}
+
+# ------ Shifts (buka/tutup kas) ------
+@api_router.get("/shifts/current")
+async def current_shift(user: dict = Depends(get_current_user)):
+    shift = await db.shifts.find_one({"cashier_id": user["id"], "status": "open"})
+    return serialize(shift) if shift else None
+
+@api_router.post("/shifts/open")
+async def open_shift(data: ShiftOpenInput, user: dict = Depends(get_current_user)):
+    existing = await db.shifts.find_one({"cashier_id": user["id"], "status": "open"})
+    if existing:
+        raise HTTPException(status_code=400, detail="Shift sudah dibuka")
+    doc = {
+        "cashier_id": user["id"], "cashier_name": user.get("name", ""),
+        "opening_cash": data.opening_cash, "status": "open",
+        "opened_at": now_iso(), "closed_at": None,
+    }
+    res = await db.shifts.insert_one(doc)
+    doc["_id"] = res.inserted_id
+    return serialize(doc)
+
+@api_router.post("/shifts/close")
+async def close_shift(data: ShiftCloseInput, user: dict = Depends(get_current_user)):
+    shift = await db.shifts.find_one({"cashier_id": user["id"], "status": "open"})
+    if not shift:
+        raise HTTPException(status_code=400, detail="Tidak ada shift aktif")
+    shift_id = str(shift["_id"])
+    sales = await db.sales.find({"shift_id": shift_id}).to_list(10000)
+    cash_sales = sum(s["total"] for s in sales if s.get("payment_method") == "cash")
+    total_sales = sum(s["total"] for s in sales)
+    expected_cash = shift.get("opening_cash", 0) + cash_sales
+    difference = data.counted_cash - expected_cash
+    await db.shifts.update_one({"_id": shift["_id"]}, {"$set": {
+        "status": "closed", "closed_at": now_iso(),
+        "counted_cash": data.counted_cash, "expected_cash": expected_cash,
+        "cash_sales": cash_sales, "total_sales": total_sales,
+        "transactions": len(sales), "difference": difference, "note": data.note,
+    }})
+    shift = await db.shifts.find_one({"_id": shift["_id"]})
+    return serialize(shift)
+
+@api_router.get("/shifts")
+async def list_shifts(user: dict = Depends(get_current_user), limit: int = 100):
+    q = {} if user.get("role") == "admin" else {"cashier_id": user["id"]}
+    shifts = await db.shifts.find(q).sort("opened_at", -1).to_list(limit)
+    return [serialize(s) for s in shifts]
 
 @api_router.get("/sales/{sale_id}")
 async def get_sale(sale_id: str, user: dict = Depends(get_current_user)):

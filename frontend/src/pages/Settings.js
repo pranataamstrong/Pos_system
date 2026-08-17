@@ -80,6 +80,11 @@ export default function Settings() {
             <Label>Catatan Kaki Struk</Label>
             <Input value={form.footer} onChange={(e) => setForm({ ...form, footer: e.target.value })} data-testid="settings-footer-input" />
           </div>
+          <div className="space-y-2">
+            <Label>Batas Stok Menipis</Label>
+            <Input type="number" min="0" value={form.low_stock_threshold ?? 10} onChange={(e) => setForm({ ...form, low_stock_threshold: Number(e.target.value) })} data-testid="settings-threshold-input" />
+            <p className="text-xs text-muted-foreground">Produk dengan stok ≤ nilai ini akan muncul di notifikasi.</p>
+          </div>
           <Button onClick={save} disabled={saving} data-testid="save-settings-button">
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Simpan
           </Button>

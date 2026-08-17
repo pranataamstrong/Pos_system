@@ -11,6 +11,8 @@ import Users from "@/pages/Users";
 import Reports from "@/pages/Reports";
 import History from "@/pages/History";
 import Settings from "@/pages/Settings";
+import Customers from "@/pages/Customers";
+import Shift from "@/pages/Shift";
 import { Loader2 } from "lucide-react";
 
 function ProtectedRoute({ children, adminOnly }) {
@@ -48,6 +50,8 @@ function App() {
               <Route path="categories" element={<ProtectedRoute adminOnly><Categories /></ProtectedRoute>} />
               <Route path="users" element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
               <Route path="settings" element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
+              <Route path="customers" element={<Customers />} />
+              <Route path="shift" element={<Shift />} />
               <Route path="history" element={<History />} />
             </Route>
           </Routes>

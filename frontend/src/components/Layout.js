@@ -10,14 +10,19 @@ import {
   LogOut,
   Store,
   Settings as SettingsIcon,
+  Wallet,
+  UserRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import NotificationBell from "@/components/NotificationBell";
 
 const navItems = [
   { to: "/", label: "Kasir", icon: ShoppingCart, end: true, admin: false },
   { to: "/reports", label: "Laporan", icon: BarChart3, admin: true },
   { to: "/products", label: "Produk", icon: Package, admin: true },
   { to: "/categories", label: "Kategori", icon: Tags, admin: true },
+  { to: "/customers", label: "Pelanggan", icon: UserRound, admin: false },
+  { to: "/shift", label: "Shift", icon: Wallet, admin: false },
   { to: "/history", label: "Riwayat", icon: Receipt, admin: false },
   { to: "/users", label: "Pengguna", icon: UsersIcon, admin: true },
   { to: "/settings", label: "Pengaturan", icon: SettingsIcon, admin: true },
@@ -30,14 +35,17 @@ export default function Layout() {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <aside className="flex w-64 flex-col border-r border-border bg-card">
-        <div className="flex items-center gap-3 px-6 py-6">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Store className="h-5 w-5" />
+        <div className="flex items-center justify-between px-6 py-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+              <Store className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="font-display text-lg font-semibold leading-none">Mandiri POS</p>
+              <p className="text-xs text-muted-foreground mt-1">Point of Sale</p>
+            </div>
           </div>
-          <div>
-            <p className="font-display text-lg font-semibold leading-none">Mandiri POS</p>
-            <p className="text-xs text-muted-foreground mt-1">Point of Sale</p>
-          </div>
+          <NotificationBell />
         </div>
 
         <nav className="flex-1 space-y-1 px-3 py-2">
